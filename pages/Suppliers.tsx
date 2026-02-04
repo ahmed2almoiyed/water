@@ -49,10 +49,13 @@ export const Suppliers = () => {
 
   const [formData, setFormData] = React.useState(initialForm);
 
-  const fetchData = React.useCallback(() => {
-    // Fix: getSuppliers now exists
-    setSuppliers(ServerAPI.getSuppliers(selectedBranchId));
-    setBranches(ServerAPI.getBranches());
+  // Fix: Convert fetchData to async to await ServerAPI results
+  const fetchData = React.useCallback(async () => {
+    // Fix: Await asynchronous getSuppliers and getBranches calls
+    const sups = await ServerAPI.getSuppliers(selectedBranchId);
+    const brs = await ServerAPI.getBranches();
+    setSuppliers(sups);
+    setBranches(brs);
   }, [selectedBranchId]);
 
   React.useEffect(() => {
@@ -67,24 +70,26 @@ export const Suppliers = () => {
     }, 500);
   };
 
-  const handleAddOrUpdate = (e: React.FormEvent) => {
+  // Fix: Convert handleAddOrUpdate to async to await ServerAPI operations
+  const handleAddOrUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (editingId) {
-      // Fix: Passed authUser as the 4th argument
-      ServerAPI.updateEntity('suppliers', editingId, formData, authUser);
+      // Fix: Await updateEntity operation
+      await ServerAPI.updateEntity('suppliers', editingId, formData, authUser);
     } else {
-      // Fix: addSupplier now exists
-      ServerAPI.addSupplier(formData);
+      // Fix: Await addSupplier operation
+      await ServerAPI.addSupplier(formData);
     }
     fetchData();
     closeModal();
   };
 
-  const handleDelete = (id: string, e: React.MouseEvent) => {
+  // Fix: Convert handleDelete to async to await ServerAPI deletion
+  const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (confirm('هل أنت متأكد من حذف هذا المورد؟ لا يمكن التراجع عن هذا الإجراء.')) {
-      // Fix: Passed authUser as the 3rd argument
-      ServerAPI.deleteEntity('suppliers', id, authUser);
+      // Fix: Await deleteEntity operation
+      await ServerAPI.deleteEntity('suppliers', id, authUser);
       fetchData();
       if (selectedIds.has(id)) {
         const next = new Set(selectedIds);

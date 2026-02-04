@@ -11,14 +11,19 @@ export const SubscriberStatement = () => {
   const [subscriber, setSubscriber] = React.useState<any>(null);
   const [statement, setStatement] = React.useState<any[]>([]);
 
+  // Fix: Use an async function inside useEffect to handle Promise-returning API calls
   React.useEffect(() => {
-    if (id) {
-      const sub = ServerAPI.getSubscriberById(id);
-      if (sub) {
-        setSubscriber(sub);
-        setStatement(ServerAPI.getSubscriberStatement(id));
+    const load = async () => {
+      if (id) {
+        const sub = await ServerAPI.getSubscriberById(id);
+        if (sub) {
+          setSubscriber(sub);
+          const stmt = await ServerAPI.getSubscriberStatement(id);
+          setStatement(stmt);
+        }
       }
-    }
+    };
+    load();
   }, [id]);
 
   if (!subscriber) return <div>جاري التحميل...</div>;

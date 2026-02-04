@@ -62,19 +62,20 @@ export const Users = () => {
 
   const [formData, setFormData] = React.useState(initialForm);
 
-  const handleAddOrUpdate = (e: React.FormEvent) => {
+  // Fix: handleAddOrUpdate is now async and properly awaits ServerAPI calls
+  const handleAddOrUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (editingId) {
       const updateData = { ...formData };
       if (!updateData.password) {
         delete (updateData as any).password;
       }
-      // Fix: Passed authUser as the 4th argument
-      ServerAPI.updateEntity('users', editingId, updateData, authUser);
+      await ServerAPI.updateEntity('users', editingId, updateData, authUser);
     } else {
-      // Fix: addUser now exists
-      ServerAPI.addUser(formData);
+      await ServerAPI.addUser(formData);
     }
+    // Fix: Force refresh database engine cache after modification
+    await dbEngine.query('users');
     setDb(dbEngine.getRaw());
     closeModal();
   };
@@ -98,16 +99,18 @@ export const Users = () => {
     setIsModalOpen(true);
   };
 
-  const toggleStatus = (id: string, currentStatus: boolean) => {
-    // Fix: Passed authUser as the 4th argument
-    ServerAPI.updateEntity('users', id, { active: !currentStatus }, authUser);
+  // Fix: toggleStatus is now async and ensures cache refresh
+  const toggleStatus = async (id: string, currentStatus: boolean) => {
+    await ServerAPI.updateEntity('users', id, { active: !currentStatus }, authUser);
+    await dbEngine.query('users');
     setDb(dbEngine.getRaw());
   };
 
-  const handleDelete = (id: string) => {
+  // Fix: handleDelete is now async and ensures cache refresh
+  const handleDelete = async (id: string) => {
     if (confirm('🚨 تحذير: هل أنت متأكد من حذف حساب هذا الموظف نهائياً؟')) {
-      // Fix: Passed authUser as the 3rd argument
-      ServerAPI.deleteEntity('users', id, authUser);
+      await ServerAPI.deleteEntity('users', id, authUser);
+      await dbEngine.query('users');
       setDb(dbEngine.getRaw());
     }
   };
@@ -166,13 +169,13 @@ export const Users = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 no-print">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 no-print text-right">
         <div className="relative group">
           <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-600 transition-colors" size={20} />
           <input 
             type="text"
             placeholder="ابحث بالاسم أو اليوزر..."
-            className="w-full pr-12 pl-4 py-3.5 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-50 outline-none font-bold text-sm shadow-sm"
+            className="w-full pr-12 pl-4 py-3.5 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-50 outline-none font-bold text-sm shadow-sm text-right"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />

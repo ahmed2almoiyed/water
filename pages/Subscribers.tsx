@@ -11,20 +11,12 @@ import {
   ExternalLink, 
   MapPin, 
   Phone, 
-  ShieldCheck, 
-  Globe, 
-  Mail, 
-  Info, 
-  FileText, 
   CheckSquare, 
   Square, 
   Edit3, 
   X, 
   Trash2, 
   Printer, 
-  Download, 
-  Upload, 
-  Droplets,
   RotateCw,
   Settings2,
   Eye,
@@ -32,7 +24,11 @@ import {
   Filter,
   FileDown,
   FileUp,
-  Layers
+  Layers,
+  FileSignature,
+  LayoutList,
+  FileText,
+  Info
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { PrintHeader, PrintFooter } from '../components/PrintHeader';
@@ -45,8 +41,8 @@ export const Subscribers = () => {
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
-  const [attachments, setAttachments] = React.useState<SubscriberAttachment[]>([]);
   const [isRefreshing, setIsRefreshing] = React.useState(false);
+  const [viewMode, setViewMode] = React.useState<'list' | 'report'>('list');
   
   const [showColumns, setShowColumns] = React.useState({
     location: true,
@@ -55,8 +51,6 @@ export const Subscribers = () => {
     actions: true
   });
   const [isColumnPickerOpen, setIsColumnPickerOpen] = React.useState(false);
-
-  const [newAttachName, setNewAttachName] = React.useState('');
 
   const db = dbEngine.getRaw();
   
@@ -82,8 +76,10 @@ export const Subscribers = () => {
 
   const [formData, setFormData] = React.useState(initialFormState);
 
-  const fetchData = React.useCallback(() => {
-    setSubscribers(ServerAPI.getSubscribers());
+  // Await async fetch
+  const fetchData = React.useCallback(async () => {
+    const data = await ServerAPI.getSubscribers();
+    setSubscribers(data);
   }, []);
 
   React.useEffect(() => {
@@ -102,32 +98,35 @@ export const Subscribers = () => {
     ExcelUtils.exportToCSV('Subscribers_List', subscribers);
   };
 
+  // Fix: handleImport now properly awaits the async mergeSubscribers method
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      ExcelUtils.importFromCSV(file, (data) => {
-        const stats = ServerAPI.mergeSubscribers(data);
+      ExcelUtils.importFromCSV(file, async (data) => {
+        const stats = await ServerAPI.mergeSubscribers(data);
         alert(`تم استيراد ${stats.added} مشترك جديد بنجاح.`);
         fetchData();
       });
     }
   };
 
-  const handleAddOrUpdate = (e: React.FormEvent) => {
+  // Await async updates
+  const handleAddOrUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (editingId) {
-      ServerAPI.updateEntity('subscribers', editingId, formData, authUser);
+      await ServerAPI.updateEntity('subscribers', editingId, formData, authUser);
     } else {
-      ServerAPI.addSubscriber(formData);
+      await ServerAPI.addSubscriber(formData);
     }
     fetchData();
-    if (!editingId) closeModal();
+    closeModal();
   };
 
-  const handleDelete = (id: string, e: React.MouseEvent) => {
+  // Await async delete
+  const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (confirm('هل أنت متأكد من حذف هذا المشترك نهائياً؟ سيتم حذف كافة السجلات المرتبطة به من قاعدة البيانات.')) {
-      ServerAPI.deleteEntity('subscribers', id, authUser);
+      await ServerAPI.deleteEntity('subscribers', id, authUser);
       fetchData();
     }
   };
@@ -136,7 +135,6 @@ export const Subscribers = () => {
     setIsModalOpen(false);
     setEditingId(null);
     setFormData(initialFormState);
-    setAttachments([]);
   };
 
   const openEditModal = (sub: Subscriber) => {
@@ -160,25 +158,7 @@ export const Subscribers = () => {
       branchId: sub.branchId,
       typeId: sub.typeId
     });
-    setAttachments(ServerAPI.getSubscriberAttachments(sub.id));
     setIsModalOpen(true);
-  };
-
-  const handleAddAttachment = () => {
-    if (!editingId || !newAttachName) return;
-    ServerAPI.addAttachment({
-      subscriberId: editingId,
-      name: newAttachName,
-      fileName: `file_${Date.now()}.pdf`
-    });
-    setAttachments(ServerAPI.getSubscriberAttachments(editingId));
-    setNewAttachName('');
-  };
-
-  const handleDeleteAttachment = (id: string) => {
-    if (!confirm('هل أنت متأكد من حذف هذا المرفق؟')) return;
-    ServerAPI.deleteAttachment(id);
-    if (editingId) setAttachments(ServerAPI.getSubscriberAttachments(editingId));
   };
 
   const toggleSelect = (id: string, e: React.MouseEvent) => {
@@ -199,7 +179,10 @@ export const Subscribers = () => {
 
   const filtered = React.useMemo(() => {
     return subscribers.filter(s => {
-      const matchesSearch = s.name.includes(searchTerm) || s.meterNumber.includes(searchTerm) || s.phone.includes(searchTerm);
+      const nameStr = s.name || '';
+      const meterStr = s.meterNumber || '';
+      const phoneStr = s.phone || '';
+      const matchesSearch = nameStr.includes(searchTerm) || meterStr.includes(searchTerm) || phoneStr.includes(searchTerm);
       const matchesType = selectedTypeId === 'all' || s.typeId === selectedTypeId;
       return matchesSearch && matchesType;
     });
@@ -207,22 +190,34 @@ export const Subscribers = () => {
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 no-print">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 no-print text-right">
         <div>
           <h2 className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight">قاعدة بيانات المشتركين</h2>
           <p className="text-slate-500 font-bold text-xs sm:text-sm">إدارة كافة البيانات، الوثائق، وتصدير السجلات</p>
         </div>
         <div className="flex items-center gap-2">
-           <button onClick={handleExport} className="bg-white border border-slate-200 p-2.5 rounded-xl text-slate-600 hover:text-emerald-600 transition-all shadow-sm flex items-center gap-2 font-bold text-xs">
+          {/* محول وضع العرض */}
+          <div className="flex bg-white border border-slate-200 p-1 rounded-xl shadow-sm ml-2">
+            <button 
+              onClick={() => setViewMode('list')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-black transition-all ${viewMode === 'list' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+            >
+              <LayoutList size={14} />
+              قائمة
+            </button>
+            <button 
+              onClick={() => setViewMode('report')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-black transition-all ${viewMode === 'report' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+            >
+              <FileText size={14} />
+              تقرير
+            </button>
+          </div>
+
+          <button onClick={handleExport} className="bg-white border border-slate-200 p-2.5 rounded-xl text-slate-600 hover:text-emerald-600 transition-all shadow-sm flex items-center gap-2 font-bold text-xs">
             <FileDown size={18} /> <span className="hidden sm:inline">Excel</span>
-           </button>
-           <div className="relative">
-            <input type="file" id="import-excel" className="hidden" accept=".csv" onChange={handleImport} />
-            <label htmlFor="import-excel" className="bg-white border border-slate-200 p-2.5 rounded-xl text-slate-600 hover:text-blue-600 transition-all shadow-sm flex items-center gap-2 font-bold text-xs cursor-pointer">
-              <FileUp size={18} /> <span className="hidden sm:inline">استيراد</span>
-            </label>
-           </div>
-           <button 
+          </button>
+          <button 
             onClick={() => window.print()}
             className="bg-white border border-slate-200 p-2.5 rounded-xl text-slate-600 hover:bg-slate-50 transition-all shadow-sm"
           >
@@ -244,7 +239,7 @@ export const Subscribers = () => {
         </div>
       </div>
 
-      <div className="flex flex-col md:flex-row gap-4 no-print">
+      <div className="flex flex-col md:flex-row gap-4 no-print text-right">
         <div className="relative group flex-1">
           <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none text-slate-400 group-focus-within:text-blue-600 transition-colors">
             <Search size={20} />
@@ -252,7 +247,7 @@ export const Subscribers = () => {
           <input 
             type="text"
             placeholder="ابحث بالاسم، رقم العداد، الهاتف..."
-            className="w-full pr-12 pl-4 py-3 sm:py-4 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-50 focus:border-blue-500 outline-none transition-all font-bold shadow-sm text-sm"
+            className="w-full pr-12 pl-4 py-3 sm:py-4 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-50 focus:border-blue-500 outline-none transition-all font-bold shadow-sm text-sm text-right"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
@@ -273,49 +268,53 @@ export const Subscribers = () => {
              <Filter className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none" size={16} />
         </div>
         
-        <div className="relative">
-             <button 
-              onClick={() => setIsColumnPickerOpen(!isColumnPickerOpen)}
-              className="h-full px-5 py-3 bg-white border border-slate-200 rounded-2xl font-black text-slate-500 hover:text-blue-600 flex items-center gap-2 transition-all shadow-sm"
-             >
-                <Settings2 size={18} /> تخصيص الأعمدة
-             </button>
-             {isColumnPickerOpen && (
-               <div className="absolute top-full left-0 mt-2 w-48 bg-white rounded-2xl border border-slate-100 shadow-2xl p-4 z-50 space-y-2 animate-in fade-in slide-in-from-top-2">
-                  <p className="text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest px-2 text-right">الأعمدة المعروضة</p>
-                  {Object.entries(showColumns).map(([key, val]) => (
-                    <button 
-                      key={key} 
-                      onClick={() => setShowColumns({...showColumns, [key]: !val})}
-                      className="w-full flex items-center justify-between p-2 hover:bg-slate-50 rounded-xl transition-all"
-                    >
-                      <span className="text-[11px] font-black text-slate-600">
-                        {key === 'location' ? 'الموقع الجغرافي' : key === 'contact' ? 'بيانات التواصل' : key === 'balance' ? 'الرصيد' : 'الإجراءات'}
-                      </span>
-                      {val ? <Eye size={14} className="text-blue-600" /> : <EyeOff size={14} className="text-slate-300" />}
-                    </button>
-                  ))}
-               </div>
-             )}
-        </div>
+        {viewMode === 'list' && (
+          <div className="relative">
+               <button 
+                onClick={() => setIsColumnPickerOpen(!isColumnPickerOpen)}
+                className="h-full px-5 py-3 bg-white border border-slate-200 rounded-2xl font-black text-slate-500 hover:text-blue-600 flex items-center gap-2 transition-all shadow-sm"
+               >
+                  <Settings2 size={18} /> تخصيص الأعمدة
+               </button>
+               {isColumnPickerOpen && (
+                 <div className="absolute top-full left-0 mt-2 w-48 bg-white rounded-2xl border border-slate-100 shadow-2xl p-4 z-50 space-y-2 animate-in fade-in slide-in-from-top-2">
+                    <p className="text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest px-2 text-right">الأعمدة المعروضة</p>
+                    {Object.entries(showColumns).map(([key, val]) => (
+                      <button 
+                        key={key} 
+                        onClick={() => setShowColumns({...showColumns, [key]: !val})}
+                        className="w-full flex items-center justify-between p-2 hover:bg-slate-50 rounded-xl transition-all"
+                      >
+                        <span className="text-[11px] font-black text-slate-600">
+                          {key === 'location' ? 'الموقع الجغرافي' : key === 'contact' ? 'بيانات التواصل' : key === 'balance' ? 'الرصيد' : 'الإجراءات'}
+                        </span>
+                        {val ? <Eye size={14} className="text-blue-600" /> : <EyeOff size={14} className="text-slate-300" />}
+                      </button>
+                    ))}
+                 </div>
+               )}
+          </div>
+        )}
       </div>
 
-      <div className="bg-white rounded-2xl sm:rounded-[32px] border border-slate-200 overflow-hidden shadow-sm">
-        <PrintHeader title="سجل قاعدة بيانات المشتركين" />
+      <div className={`bg-white rounded-2xl sm:rounded-[32px] border border-slate-200 overflow-hidden shadow-sm transition-all ${viewMode === 'report' ? 'border-slate-300 shadow-xl' : ''}`}>
+        <PrintHeader title={viewMode === 'report' ? "تقرير مفصل ببيانات المشتركين" : "سجل قاعدة بيانات المشتركين"} />
         <div className="overflow-x-auto no-scrollbar">
           <table className="w-full text-right border-collapse min-w-[700px] lg:min-w-full">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 print:bg-white text-right">
-                <th className="px-4 py-5 w-12 text-center no-print">
-                  <button onClick={toggleSelectAll}>
-                    {selectedIds.size === filtered.length && filtered.length > 0 ? <CheckSquare size={20} className="text-blue-600" /> : <Square size={20} className="text-slate-300" />}
-                  </button>
-                </th>
-                <th className="px-6 py-5 font-black text-slate-600 text-xs sm:text-sm">المشترك / العداد</th>
-                {showColumns.location && <th className="px-6 py-5 font-black text-slate-600 text-xs sm:text-sm">الموقع</th>}
-                {showColumns.contact && <th className="px-6 py-5 font-black text-slate-600 text-xs sm:text-sm">التواصل</th>}
-                {showColumns.balance && <th className="px-6 py-5 font-black text-slate-600 text-center text-xs sm:text-sm">الرصيد</th>}
-                {showColumns.actions && <th className="px-6 py-5 font-black text-slate-600 text-center text-xs sm:text-sm no-print">إجراءات</th>}
+              <tr className={`${viewMode === 'report' ? 'bg-slate-900 text-white' : 'bg-slate-50 text-slate-600'} border-b border-slate-200 print:bg-white print:text-slate-900 text-right`}>
+                {viewMode === 'list' && (
+                  <th className="px-4 py-5 w-12 text-center no-print">
+                    <button onClick={toggleSelectAll}>
+                      {selectedIds.size === filtered.length && filtered.length > 0 ? <CheckSquare size={20} className="text-blue-600" /> : <Square size={20} className="text-slate-300" />}
+                    </button>
+                  </th>
+                )}
+                <th className="px-6 py-5 font-black text-xs sm:text-sm">المشترك / العداد</th>
+                {(showColumns.location || viewMode === 'report') && <th className="px-6 py-5 font-black text-xs sm:text-sm">الموقع</th>}
+                {(showColumns.contact || viewMode === 'report') && <th className="px-6 py-5 font-black text-xs sm:text-sm">التواصل</th>}
+                {(showColumns.balance || viewMode === 'report') && <th className="px-6 py-5 font-black text-center text-xs sm:text-sm">الرصيد</th>}
+                {viewMode === 'list' && showColumns.actions && <th className="px-6 py-5 font-black text-center text-xs sm:text-sm no-print">إجراءات</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -325,26 +324,28 @@ export const Subscribers = () => {
                 return (
                   <tr 
                     key={sub.id} 
-                    onClick={() => openEditModal(sub)}
-                    className={`cursor-pointer transition-all ${isSelected ? 'bg-blue-50/50' : 'hover:bg-blue-50/30'} ${isPrintHidden ? 'print:hidden' : ''}`}
+                    onClick={() => viewMode === 'list' && openEditModal(sub)}
+                    className={`transition-all ${viewMode === 'list' ? 'cursor-pointer hover:bg-blue-50/30' : ''} ${isSelected ? 'bg-blue-50/50' : ''} ${isPrintHidden ? 'print:hidden' : ''}`}
                   >
-                    <td className="px-4 py-5 text-center no-print" onClick={(e) => e.stopPropagation()}>
-                      <button onClick={(e) => toggleSelect(sub.id, e)} className="text-slate-300">
-                        {isSelected ? <CheckSquare size={20} className="text-blue-600" /> : <Square size={20} />}
-                      </button>
-                    </td>
+                    {viewMode === 'list' && (
+                      <td className="px-4 py-5 text-center no-print" onClick={(e) => e.stopPropagation()}>
+                        <button onClick={(e) => toggleSelect(sub.id, e)} className="text-slate-300">
+                          {isSelected ? <CheckSquare size={20} className="text-blue-600" /> : <Square size={20} />}
+                        </button>
+                      </td>
+                    )}
                     <td className="px-6 py-5">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-black text-sm sm:text-base shadow-lg shadow-blue-50 shrink-0">
-                          {sub.name[0]}
+                        <div className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl ${viewMode === 'report' ? 'bg-slate-100 text-slate-800' : 'bg-blue-600 text-white'} flex items-center justify-center font-black text-sm sm:text-base shadow-sm shrink-0`}>
+                          {sub.name ? sub.name[0] : 'U'}
                         </div>
                         <div className="min-w-0">
-                          <p className="font-black text-slate-800 text-xs sm:text-sm truncate max-w-[150px] sm:max-w-none">{sub.name}</p>
-                          <p className="text-[10px] sm:text-xs text-slate-400 font-black mt-0.5 tracking-wider">{sub.meterNumber}</p>
+                          <p className="font-black text-slate-800 text-xs sm:text-sm truncate">{sub.name}</p>
+                          <p className="text-[10px] sm:text-xs text-slate-400 font-black mt-0.5 tracking-wider font-mono">{sub.meterNumber}</p>
                         </div>
                       </div>
                     </td>
-                    {showColumns.location && (
+                    {(showColumns.location || viewMode === 'report') && (
                       <td className="px-6 py-5 text-right">
                         <div className="flex flex-col gap-1 text-xs font-bold text-slate-600">
                           <div className="flex items-center gap-1.5">
@@ -355,7 +356,7 @@ export const Subscribers = () => {
                         </div>
                       </td>
                     )}
-                    {showColumns.contact && (
+                    {(showColumns.contact || viewMode === 'report') && (
                       <td className="px-6 py-5">
                         <div className="flex flex-col gap-1 text-xs font-bold text-slate-600">
                           <div className="flex items-center gap-1.5">
@@ -366,9 +367,9 @@ export const Subscribers = () => {
                         </div>
                       </td>
                     )}
-                    {showColumns.balance && (
+                    {(showColumns.balance || viewMode === 'report') && (
                       <td className="px-6 py-5 text-center">
-                        <div className="bg-slate-50 inline-flex flex-col px-3 py-1.5 rounded-2xl border border-slate-100 min-w-[90px]">
+                        <div className={`${viewMode === 'report' ? '' : 'bg-slate-50 border border-slate-100'} inline-flex flex-col px-3 py-1.5 rounded-2xl min-w-[90px]`}>
                           <span className={`font-black text-xs sm:text-sm ${sub.balance > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
                             {sub.balance.toLocaleString()}
                           </span>
@@ -376,7 +377,7 @@ export const Subscribers = () => {
                         </div>
                       </td>
                     )}
-                    {showColumns.actions && (
+                    {viewMode === 'list' && showColumns.actions && (
                       <td className="px-6 py-5 text-center no-print" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-2">
                            <Link 
@@ -431,6 +432,7 @@ export const Subscribers = () => {
                 <section className="space-y-4">
                   <div className="flex items-center gap-2 text-blue-600 pb-2 border-b border-slate-100 justify-end">
                     <h4 className="font-black text-sm uppercase tracking-wider">البيانات الأساسية والتواصل</h4>
+                    <h4 className="font-black text-sm uppercase tracking-wider">البيانات الأساسية والتواصل</h4>
                     <Info size={16} />
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -449,9 +451,30 @@ export const Subscribers = () => {
                   </div>
                 </section>
 
+                <section className="space-y-4">
+                   <div className="flex items-center gap-2 text-blue-600 pb-2 border-b border-slate-100 justify-end">
+                    <h4 className="font-black text-sm uppercase tracking-wider">الموقع الجغرافي والعنوان</h4>
+                    <MapPin size={16} />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                     <div>
+                        <label className="block text-[10px] font-black text-slate-400 mb-1 uppercase tracking-wider">المحافظة</label>
+                        <input required className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm" value={formData.governorate} onChange={(e) => setFormData({...formData, governorate: e.target.value})} />
+                     </div>
+                     <div>
+                        <label className="block text-[10px] font-black text-slate-400 mb-1 uppercase tracking-wider">المنطقة / المديرية</label>
+                        <input required className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm" value={formData.region} onChange={(e) => setFormData({...formData, region: e.target.value})} />
+                     </div>
+                     <div className="lg:col-span-2">
+                        <label className="block text-[10px] font-black text-slate-400 mb-1 uppercase tracking-wider">العنوان التفصيلي</label>
+                        <input required className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm" value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})} />
+                     </div>
+                  </div>
+                </section>
+
                 <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
                   <button type="button" onClick={closeModal} className="px-8 py-3 rounded-xl font-black text-slate-400 hover:bg-slate-50 transition-all text-sm">إلغاء</button>
-                  <button type="submit" className="bg-blue-600 text-white px-10 py-3 rounded-xl font-black shadow-lg shadow-blue-50 hover:bg-blue-700 transition-all active:scale-95 text-sm flex items-center gap-2">
+                  <button type="submit" className="bg-blue-600 text-white px-10 py-3 rounded-xl font-black shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all active:scale-95 text-sm flex items-center gap-2">
                     {editingId ? <><Edit3 size={18} /> حفظ التغييرات</> : <><UserPlus size={18} /> تسجيل المشترك</>}
                   </button>
                 </div>

@@ -1,15 +1,39 @@
 
 import { Database } from '../types';
 
-const STORAGE_KEY = 'water_system_sqlite_sim_v1';
+// استخدام IP مباشر يقلل من احتمالية فشل الاتصال في بعض بيئات التطوير
+const API_BASE_URL = 'http://127.0.0.1:3001/api';
+
+const initialDb: Database = {
+  users: [],
+  branches: [],
+  funds: [],
+  collectors: [],
+  subscriptionTypes: [],
+  subscribers: [],
+  suppliers: [],
+  readings: [],
+  invoices: [],
+  receipts: [],
+  settlements: [],
+  expenses: [],
+  journal: [],
+  attachments: [],
+  settings: {
+    institutionName: 'مؤسسة المياه الوطنية',
+    currency: 'ريال',
+    defaultBranchId: 'br-main'
+  }
+};
+
+type Listener = (db: Database) => void;
 
 export class DatabaseEngine {
   private static instance: DatabaseEngine;
-  private data: Database;
-
-  private constructor() {
-    this.data = this.load();
-  }
+  private cache: Database = initialDb;
+  private listeners: Set<Listener> = new Set();
+  
+  private constructor() {}
 
   public static getInstance(): DatabaseEngine {
     if (!DatabaseEngine.instance) {
@@ -18,136 +42,97 @@ export class DatabaseEngine {
     return DatabaseEngine.instance;
   }
 
-  private load(): Database {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw);
-        // التحقق من توافق الحقول الجديدة للصناديق
-        if (parsed.funds) {
-          parsed.funds = parsed.funds.map((f: any) => ({
-            ...f,
-            manager: f.manager || 'غير محدد',
-            openingBalance: f.openingBalance || 0,
-            createdAt: f.createdAt || new Date().toISOString()
-          }));
-        }
-        if (!parsed.branches) parsed.branches = [];
-        if (!parsed.users) parsed.users = [];
-        if (!parsed.funds) parsed.funds = [];
-        if (!parsed.collectors) parsed.collectors = [];
-        if (!parsed.subscriptionTypes) parsed.subscriptionTypes = [];
-        if (!parsed.attachments) parsed.attachments = [];
-        if (!parsed.settings.phone) parsed.settings.phone = "";
-        if (!parsed.settings.fax) parsed.settings.fax = "";
-        if (!parsed.settings.email) parsed.settings.email = "";
-        if (!parsed.settings.website) parsed.settings.website = "";
-        if (!parsed.settings.notes) parsed.settings.notes = "";
-        return parsed;
-      } catch (e) {
-        console.error("Database corruption detected, resetting...", e);
-      }
+  public subscribe(listener: Listener) {
+    this.listeners.add(listener);
+    return () => { this.listeners.delete(listener); };
+  }
+
+  private notify() {
+    this.listeners.forEach(l => l({ ...this.cache }));
+  }
+
+  public async checkServerStatus(): Promise<boolean> {
+    try {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), 1500); // مهلة قصيرة للتحقق السريع
+      const res = await fetch(`${API_BASE_URL.replace('/api', '')}/health`, { 
+        signal: controller.signal,
+        cache: 'no-store'
+      });
+      clearTimeout(id);
+      return res.ok;
+    } catch {
+      return false;
     }
-    return this.getInitialSchema();
   }
 
-  private getInitialSchema(): Database {
-    const mainBranchId = 'br-1';
-    const mainFundId = 'f-1';
-    const now = new Date().toISOString();
-    return {
-      users: [
-        { id: 'u1', username: 'admin', password: 'admin', name: 'المدير العام', role: 'admin', branchId: mainBranchId, active: true }
-      ],
-      branches: [
-        { id: 'br-1', name: 'الفرع الرئيسي', location: 'وسط المدينة', manager: 'أحمد علي' },
-        { id: 'br-2', name: 'فرع الشمال', location: 'حي النرجس', manager: 'سالم فهد' }
-      ],
-      funds: [
-        { id: mainFundId, name: 'الصندوق الرئيسي', branchId: mainBranchId, balance: 0, manager: 'أحمد علي', openingBalance: 0, createdAt: now },
-        { id: 'f-2', name: 'خزينة فرع الشمال', branchId: 'br-2', balance: 0, manager: 'سالم فهد', openingBalance: 0, createdAt: now }
-      ],
-      collectors: [
-        { id: 'c-1', name: 'محمد المحصل', phone: '777111222', fundId: mainFundId, branchId: mainBranchId }
-      ],
-      subscriptionTypes: [
-        { 
-          id: 'st-1', 
-          name: 'سكني', 
-          fixedFee: 15, 
-          tiers: [
-            { from: 0, to: 10, price: 1.5 },
-            { from: 11, to: 30, price: 2.5 },
-            { from: 31, to: null, price: 5.0 }
-          ] 
-        },
-        { 
-          id: 'st-2', 
-          name: 'تجاري', 
-          fixedFee: 50, 
-          tiers: [
-            { from: 0, to: null, price: 6.0 }
-          ] 
-        }
-      ],
-      subscribers: [
-        { 
-          id: '1', 
-          name: 'أحمد محمد علي', 
-          meterNumber: 'M-1001', 
-          phone: '0501234567', 
-          email: 'ahmed@example.com',
-          website: '',
-          address: 'الحي الرئيسي، شارع 1', 
-          country: 'اليمن',
-          governorate: 'صنعاء',
-          region: 'السبعين',
-          docNumber: '01010101',
-          docType: 'بطاقة شخصية',
-          docIssueDate: '2020-01-01',
-          docIssuePlace: 'صنعاء',
-          notes: 'مشترك قديم',
-          balance: 0, 
-          initialReading: 120, 
-          branchId: mainBranchId, 
-          typeId: 'st-1' 
-        }
-      ],
-      suppliers: [],
-      readings: [],
-      invoices: [],
-      receipts: [],
-      expenses: [],
-      attachments: [],
-      settings: {
-        institutionName: 'مؤسسة المياه الوطنية',
-        currency: 'ريال',
-        defaultBranchId: 'br-1',
-        phone: '',
-        fax: '',
-        email: '',
-        website: '',
-        notes: ''
-      }
-    };
-  }
-
-  public query<K extends keyof Database>(table: K): Database[K] {
-    return this.data[table];
-  }
-
-  public commit<K extends keyof Database>(table: K, newData: Database[K]) {
-    this.data[table] = newData;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data));
+  // وظيفة مخصصة لزر "تشغيل/تحقق" اليدوي
+  public async pingServer(): Promise<boolean> {
+    return await this.checkServerStatus();
   }
 
   public getRaw(): Database {
-    return this.data;
+    return this.cache;
   }
 
-  public overwrite(db: Database) {
-    this.data = db;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+  private async fetchApi(endpoint: string, options?: RequestInit) {
+    try {
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || `API Error: ${response.statusText}`);
+      }
+      const data = await response.json();
+      
+      if (endpoint === '/app/settings') {
+        this.cache.settings = data;
+      } else if (endpoint.startsWith('/') && !endpoint.includes('app/settings')) {
+        const table = endpoint.split('/')[1] as keyof Database;
+        if (this.cache[table] !== undefined && Array.isArray(data)) {
+          (this.cache as any)[table] = data;
+        }
+      }
+      this.notify();
+      return data;
+    } catch (e) {
+      console.error("❌ Database Engine Error:", e);
+      throw e;
+    }
+  }
+
+  public async query<K extends keyof Database>(table: K): Promise<Database[K]> {
+    if (table === 'settings') return await this.fetchApi('/app/settings');
+    return await this.fetchApi(`/${table}`);
+  }
+
+  public async saveItem(table: keyof Database, item: any) {
+    if (!item.id) item.id = crypto.randomUUID();
+    const res = await this.fetchApi(`/${table}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(item)
+    });
+    await this.query(table);
+    return res;
+  }
+
+  public async deleteItem(table: keyof Database, id: string) {
+    const res = await this.fetchApi(`/${table}/${id}`, {
+      method: 'DELETE'
+    });
+    await this.query(table);
+    return res;
+  }
+
+  public async overwrite(db: Database) {
+    this.cache = db;
+    const res = await this.fetchApi('/app/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(db.settings)
+    });
+    this.notify();
+    return res;
   }
 }
 

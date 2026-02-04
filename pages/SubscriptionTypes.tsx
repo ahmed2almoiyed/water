@@ -31,22 +31,20 @@ export const SubscriptionTypes = () => {
 
   const [formData, setFormData] = React.useState(initialForm);
 
-  const handleSaveOrUpdate = (e: React.FormEvent) => {
+  // Fix: handleSaveOrUpdate is now async and uses ServerAPI.addSubscriptionType instead of dbEngine.commit
+  const handleSaveOrUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name) return;
 
     if (editingId) {
-      // Fix: Passed authUser as the 4th argument
-      ServerAPI.updateEntity('subscriptionTypes', editingId, formData, authUser);
+      await ServerAPI.updateEntity('subscriptionTypes', editingId, formData, authUser);
     } else {
-      const dbRaw = dbEngine.getRaw();
-      const newType: SubscriptionType = { 
-        ...formData, 
-        id: crypto.randomUUID() 
-      };
-      dbEngine.commit('subscriptionTypes', [...dbRaw.subscriptionTypes, newType]);
+      // Fix: Used ServerAPI.addSubscriptionType and awaited the call
+      await ServerAPI.addSubscriptionType(formData);
     }
     
+    // Fix: Force refresh database engine cache after modification
+    await dbEngine.query('subscriptionTypes');
     setDb(dbEngine.getRaw());
     closeModal();
   };
@@ -63,10 +61,12 @@ export const SubscriptionTypes = () => {
     setIsModalOpen(true);
   };
 
-  const handleDelete = (id: string) => {
+  // Fix: handleDelete is now async and ensures cache refresh
+  const handleDelete = async (id: string) => {
     if (confirm('تنبيه: حذف نوع الاشتراك قد يؤثر على فواتير المشتركين الحاليين المرتبطين به. هل أنت متأكد؟')) {
-      // Fix: Passed authUser as the 3rd argument
-      ServerAPI.deleteEntity('subscriptionTypes', id, authUser);
+      await ServerAPI.deleteEntity('subscriptionTypes', id, authUser);
+      // Fix: Force refresh database engine cache after modification
+      await dbEngine.query('subscriptionTypes');
       setDb(dbEngine.getRaw());
     }
   };

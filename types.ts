@@ -51,6 +51,7 @@ export interface Invoice {
   subscriberId: string;
   invoiceNumber: string;
   date: string;
+  issueDate: string;
   dueDate: string;
   amount: number;
   arrears: number;
@@ -74,6 +75,19 @@ export interface Receipt {
   isPosted: boolean;
 }
 
+export interface Settlement {
+  id: string;
+  subscriberId: string;
+  type: 'credit' | 'debit' | 'meter_reset';
+  amount: number;
+  newReading?: number;
+  description: string;
+  date: string;
+  reference: string;
+  branchId: string;
+  isPosted: boolean;
+}
+
 export interface Expense {
   id: string;
   category: string;
@@ -87,6 +101,19 @@ export interface Expense {
   isPosted: boolean;
 }
 
+export interface JournalEntry {
+  id: string;
+  date: string;
+  referenceId: string;
+  referenceType: 'invoice' | 'receipt' | 'expense' | 'settlement';
+  description: string;
+  debit: number;
+  credit: number;
+  accountId: string;
+  accountType: 'subscriber' | 'fund' | 'supplier' | 'income' | 'expense';
+  branchId: string;
+}
+
 export interface Collector { id: string; name: string; phone: string; fundId: string; branchId: string; }
 export interface PriceTier { from: number; to: number | null; price: number; }
 export interface SubscriptionType { id: string; name: string; tiers: PriceTier[]; fixedFee: number; }
@@ -94,20 +121,17 @@ export interface SubscriberAttachment { id: string; subscriberId: string; name: 
 export interface Subscriber { id: string; name: string; meterNumber: string; phone: string; email?: string; website?: string; address: string; country: string; governorate: string; region: string; docNumber: string; docType: string; docIssueDate: string; docIssuePlace: string; notes?: string; balance: number; initialReading: number; branchId: string; typeId: string; }
 export interface Supplier { id: string; name: string; contactPerson: string; phone: string; email: string; address: string; paymentTerms: string; balance: number; branchId: string; }
 
-// نظام التقارير المخصص
-export type ReportModule = 'subscribers' | 'invoices' | 'receipts' | 'expenses' | 'readings';
+// Added missing types for ReportDesigner
+export type ReportModule = 'subscribers' | 'invoices' | 'receipts' | 'expenses';
 
 export interface ReportConfig {
   title: string;
   module: ReportModule;
   columns: string[];
   filters: {
+    branchId?: string;
     startDate?: string;
     endDate?: string;
-    branchId?: string;
-    status?: string;
-    minAmount?: number;
-    maxAmount?: number;
   };
 }
 
@@ -122,7 +146,9 @@ export interface Database {
   readings: Reading[];
   invoices: Invoice[];
   receipts: Receipt[];
+  settlements: Settlement[];
   expenses: Expense[];
+  journal: JournalEntry[];
   attachments: SubscriberAttachment[];
   settings: {
     institutionName: string;

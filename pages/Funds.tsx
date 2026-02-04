@@ -61,20 +61,17 @@ export const Funds = () => {
 
   const [formData, setFormData] = React.useState(initialForm);
 
-  const handleSaveOrUpdate = (e: React.FormEvent) => {
+  // Fix: handleSaveOrUpdate is now async and uses ServerAPI.addFund instead of dbEngine.commit
+  const handleSaveOrUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
-    const dbRaw = dbEngine.getRaw();
     if (editingId) {
-      // Fix: Used updateEntity and passed authUser
-      ServerAPI.updateEntity('funds', editingId, formData, authUser);
+      await ServerAPI.updateEntity('funds', editingId, formData, authUser);
     } else {
-      const newFund: Fund = { 
-        ...formData, 
-        id: crypto.randomUUID(), 
-        balance: formData.openingBalance, // الرصيد الحالي يبدأ بالافتتاحي
-      };
-      dbEngine.commit('funds', [...dbRaw.funds, newFund]);
+      // Fix: Used ServerAPI.addFund and awaited the call
+      await ServerAPI.addFund(formData);
     }
+    // Fix: Force refresh database engine cache after modification
+    await dbEngine.query('funds');
     setDb(dbEngine.getRaw());
     closeModal();
   };
@@ -97,10 +94,12 @@ export const Funds = () => {
     setIsModalOpen(true);
   };
 
-  const handleDelete = (id: string) => {
+  // Fix: handleDelete is now async and ensures cache refresh
+  const handleDelete = async (id: string) => {
     if (confirm('هل أنت متأكد من حذف هذا الصندوق؟ سيؤدي ذلك لمسح كافة سجلات الحركات المرتبطة به.')) {
-      // Fix: Passed authUser as the 3rd argument
-      ServerAPI.deleteEntity('funds', id, authUser);
+      await ServerAPI.deleteEntity('funds', id, authUser);
+      // Fix: Force refresh database engine cache after modification
+      await dbEngine.query('funds');
       setDb(dbEngine.getRaw());
     }
   };
@@ -109,18 +108,22 @@ export const Funds = () => {
     ExcelUtils.exportToCSV('Funds_Register', db.funds);
   };
 
+  // Fix: handleImport is now async, uses saveItem for batch import, and refreshes the cache
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      ExcelUtils.importFromCSV(file, (data) => {
+      ExcelUtils.importFromCSV(file, async (data) => {
         const importedFunds = data.map(item => ({
           ...item,
           id: item.id || crypto.randomUUID(),
-          balance: Number(item.balance) || 0,
+          balance: Number(item.balance) || Number(item.openingBalance) || 0,
           openingBalance: Number(item.openingBalance) || 0,
           createdAt: item.createdAt || new Date().toISOString()
         }));
-        dbEngine.commit('funds', [...db.funds, ...importedFunds]);
+        // Fix: Use saveItem for each imported fund and await all
+        await Promise.all(importedFunds.map(f => dbEngine.saveItem('funds', f)));
+        // Fix: Force refresh database engine cache after batch import
+        await dbEngine.query('funds');
         setDb(dbEngine.getRaw());
       });
     }
@@ -304,7 +307,7 @@ export const Funds = () => {
       {isModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 no-print text-right" dir="rtl">
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md" onClick={closeModal} />
-          <div className="relative bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in duration-300">
+          <div className="relative bg-white w-full max-md rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in duration-300">
             <div className="p-8 bg-blue-600 text-white flex justify-between items-center">
               <button onClick={closeModal} className="hover:bg-white/20 p-2 rounded-2xl transition-all"><X size={24} /></button>
               <div className="text-right">

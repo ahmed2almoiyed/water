@@ -3,7 +3,7 @@ import { Database, Subscriber, Reading, Invoice, Receipt, Expense } from '../typ
 
 const DB_KEY = 'water_system_db_v1';
 
-// Fix: added missing 'funds' and 'collectors' properties to comply with Database interface
+// Fix: added missing 'funds', 'collectors', 'attachments', 'settlements', and 'journal' properties to comply with Database interface
 const initialDb: Database = {
   users: [
     { id: 'u1', username: 'admin', name: 'المدير العام', role: 'admin', branchId: 'br-1', active: true }
@@ -73,7 +73,11 @@ const initialDb: Database = {
   readings: [],
   invoices: [],
   receipts: [],
+  // Fix: added missing 'settlements' property to comply with Database interface
+  settlements: [],
   expenses: [],
+  // Fix: added missing 'journal' property to comply with Database interface
+  journal: [],
   // Fix: added missing 'attachments' property to comply with Database interface
   attachments: [],
   settings: {
@@ -124,13 +128,14 @@ export const dbService = {
     const arrears = sub?.balance || 0;
     if (sub) sub.balance += reading.totalAmount;
 
-    // Fix: Create Invoice automatically with required properties, including isPosted
+    // Fix: Create Invoice automatically with required properties, including isPosted and missing issueDate
     const newInvoice: Invoice = {
       id: crypto.randomUUID(),
       readingId: newReading.id,
       subscriberId: reading.subscriberId,
       invoiceNumber: `INV-${Date.now()}`,
       date: new Date().toISOString().split('T')[0],
+      issueDate: new Date().toISOString().split('T')[0],
       dueDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       amount: reading.totalAmount,
       arrears: arrears,

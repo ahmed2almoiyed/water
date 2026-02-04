@@ -14,19 +14,19 @@ export const Settings = () => {
   const [closeDate, setCloseDate] = React.useState(settings.lastClosedDate || new Date().toISOString().split('T')[0]);
   const [status, setStatus] = React.useState<{type: 'success' | 'error', message: string} | null>(null);
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (authUser.role !== 'admin') return alert('عذراً، التعديل متاح للمدير فقط');
     
     const updatedDb = dbEngine.getRaw();
     updatedDb.settings = settings;
-    dbEngine.overwrite(updatedDb);
+    await dbEngine.overwrite(updatedDb);
     setStatus({ type: 'success', message: 'تم حفظ الإعدادات بنجاح' });
   };
 
-  const handleClosePeriod = () => {
+  const handleClosePeriod = async () => {
     if (confirm(`تنبيه أمان: هل أنت متأكد من إقفال الفترة المالية حتى تاريخ ${closeDate}؟ لن يتمكن أي موظف من إضافة أو تعديل مستندات قبل هذا التاريخ.`)) {
-      ServerAPI.closeFinancialPeriod(closeDate, authUser);
+      await ServerAPI.closeFinancialPeriod(closeDate, authUser);
       setDb(dbEngine.getRaw());
       setStatus({ type: 'success', message: 'تم إقفال الفترة المالية بنجاح' });
     }

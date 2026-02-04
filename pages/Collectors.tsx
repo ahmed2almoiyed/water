@@ -58,15 +58,16 @@ export const Collectors = () => {
 
   const [formData, setFormData] = React.useState(initialForm);
 
-  const handleSaveOrUpdate = (e: React.FormEvent) => {
+  // Fix: handleSaveOrUpdate is now async and properly awaits ServerAPI calls
+  const handleSaveOrUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (editingId) {
-      // Fix: Passed authUser as the 4th argument
-      ServerAPI.updateEntity('collectors', editingId, formData, authUser);
+      await ServerAPI.updateEntity('collectors', editingId, formData, authUser);
     } else {
-      // Fix: addCollector now exists
-      ServerAPI.addCollector(formData);
+      await ServerAPI.addCollector(formData);
     }
+    // Fix: Force refresh database engine cache after modification
+    await dbEngine.query('collectors');
     setDb(dbEngine.getRaw());
     closeModal();
   };
@@ -83,10 +84,12 @@ export const Collectors = () => {
     setIsModalOpen(true);
   };
 
-  const handleDelete = (id: string) => {
+  // Fix: handleDelete is now async and ensures cache refresh
+  const handleDelete = async (id: string) => {
     if (confirm('هل أنت متأكد من حذف بيانات هذا المحصل؟')) {
-      // Fix: Passed authUser as the 3rd argument
-      ServerAPI.deleteEntity('collectors', id, authUser);
+      await ServerAPI.deleteEntity('collectors', id, authUser);
+      // Fix: Force refresh database engine cache after modification
+      await dbEngine.query('collectors');
       setDb(dbEngine.getRaw());
     }
   };
@@ -119,10 +122,10 @@ export const Collectors = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 no-print">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 no-print text-right">
         <div>
-          <h2 className="text-2xl font-black text-slate-800">إدارة سجلات المحصلين</h2>
-          <p className="text-slate-500 font-bold text-sm">تنظيم وتوزيع مهام التحصيل النقدي والربط المالي</p>
+          <h2 className="text-2xl font-black text-slate-800 tracking-tight text-right">إدارة سجلات المحصلين</h2>
+          <p className="text-slate-500 font-bold text-sm text-right">تنظيم وتوزيع مهام التحصيل النقدي والربط المالي</p>
         </div>
         <div className="flex items-center gap-3">
           <button onClick={() => window.print()} className="bg-white border border-slate-200 p-2.5 rounded-xl text-slate-600 hover:bg-slate-50 shadow-sm transition-all"><Printer size={20} /></button>
@@ -142,7 +145,7 @@ export const Collectors = () => {
           <input 
             type="text"
             placeholder="ابحث بالاسم أو الهاتف..."
-            className="w-full pr-12 pl-4 py-3.5 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-emerald-50 outline-none font-bold text-sm shadow-sm"
+            className="w-full pr-12 pl-4 py-3.5 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-emerald-50 outline-none font-bold text-sm shadow-sm text-right"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
@@ -150,7 +153,7 @@ export const Collectors = () => {
         <div className="relative">
           <Building className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
           <select 
-            className="w-full pr-12 pl-4 py-3.5 bg-white border border-slate-200 rounded-2xl font-black text-slate-600 appearance-none text-sm outline-none"
+            className="w-full pr-12 pl-4 py-3.5 bg-white border border-slate-200 rounded-2xl font-black text-slate-600 appearance-none text-sm outline-none text-right"
             value={selectedBranchId}
             onChange={(e) => setSelectedBranchId(e.target.value)}
           >
@@ -265,7 +268,7 @@ export const Collectors = () => {
       {isModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 no-print text-right" dir="rtl">
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md" onClick={closeModal} />
-          <div className="relative bg-white w-full max-w-md rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in duration-300">
+          <div className="relative bg-white w-full max-md rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in duration-300">
             <div className="p-8 bg-emerald-600 text-white flex justify-between items-center">
               <button onClick={closeModal} className="hover:bg-white/20 p-2 rounded-2xl transition-all"><X size={24} /></button>
               <div className="text-right">

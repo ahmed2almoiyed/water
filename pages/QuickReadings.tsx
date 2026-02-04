@@ -6,15 +6,26 @@ import { Subscriber, SubscriptionType } from '../types';
 import { Zap, Save, CheckCircle2, AlertCircle, Search, Filter } from 'lucide-react';
 
 export const QuickReadings = () => {
-  const db = dbEngine.getRaw();
+  const [db, setDb] = React.useState(dbEngine.getRaw());
   const [branchId, setBranchId] = React.useState(db.settings.defaultBranchId);
   const [period, setPeriod] = React.useState({ year: new Date().getFullYear(), month: new Date().getMonth() + 1 });
   const [entries, setEntries] = React.useState<Record<string, number>>({});
   const [saving, setSaving] = React.useState(false);
   const [success, setSuccess] = React.useState(false);
+  const [subscribers, setSubscribers] = React.useState<Subscriber[]>([]);
+  const [subTypes, setSubTypes] = React.useState<SubscriptionType[]>([]);
 
-  const subscribers = ServerAPI.getSubscribers(branchId);
-  const subTypes = ServerAPI.getSubscriptionTypes();
+  // Load subscribers and types asynchronously
+  React.useEffect(() => {
+    const load = async () => {
+      const s = await ServerAPI.getSubscribers(branchId);
+      const t = await ServerAPI.getSubscriptionTypes();
+      setSubscribers(s);
+      setSubTypes(t);
+      setDb(dbEngine.getRaw());
+    };
+    load();
+  }, [branchId]);
 
   const handleReadingChange = (subId: string, val: string) => {
     setEntries(prev => ({ ...prev, [subId]: Number(val) }));
@@ -38,7 +49,7 @@ export const QuickReadings = () => {
         const type = subTypes.find(t => t.id === sub.typeId)!;
         const totalAmount = ServerAPI.calculateTieredCost(units, type);
 
-        ServerAPI.addReading({
+        await ServerAPI.addReading({
           subscriberId: subId,
           periodYear: period.year,
           periodMonth: period.month,
@@ -52,6 +63,7 @@ export const QuickReadings = () => {
       }
       setSuccess(true);
       setEntries({});
+      setDb(dbEngine.getRaw());
       setTimeout(() => setSuccess(false), 5000);
     } finally {
       setSaving(false);
@@ -60,7 +72,7 @@ export const QuickReadings = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center text-right">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">الإدخال السريع للقراءات</h2>
           <p className="text-slate-500">تسجيل قراءات متعددة في شاشة واحدة وإصدار الفواتير فوراً</p>
@@ -74,7 +86,7 @@ export const QuickReadings = () => {
         </button>
       </div>
 
-      <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm grid grid-cols-1 md:grid-cols-3 gap-6 text-right">
         <div className="space-y-2">
           <label className="text-xs font-black text-slate-400 uppercase mr-1">الفرع</label>
           <select 
@@ -106,7 +118,7 @@ export const QuickReadings = () => {
         </div>
       </div>
 
-      <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xl">
+      <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xl text-right">
         <table className="w-full text-right">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
@@ -125,14 +137,14 @@ export const QuickReadings = () => {
               
               const currentVal = entries[sub.id] || 0;
               const diff = Math.max(0, currentVal - lastReading);
-              const type = subTypes.find(t => t.id === sub.typeId)!;
-              const estCost = currentVal > lastReading ? ServerAPI.calculateTieredCost(diff, type) : 0;
+              const type = subTypes.find(t => t.id === sub.typeId);
+              const estCost = (type && currentVal > lastReading) ? ServerAPI.calculateTieredCost(diff, type) : 0;
 
               return (
                 <tr key={sub.id} className="group hover:bg-slate-50/80 transition-all">
                   <td className="px-6 py-5">
                     <p className="font-black text-slate-800">{sub.name}</p>
-                    <p className="text-xs text-slate-400 font-mono mt-1">{sub.meterNumber} • {type.name}</p>
+                    <p className="text-xs text-slate-400 font-mono mt-1">{sub.meterNumber} • {type?.name}</p>
                   </td>
                   <td className="px-6 py-5 font-mono text-slate-500 font-bold">{lastReading}</td>
                   <td className="px-6 py-5">
